@@ -1,0 +1,75 @@
+:root {
+  --cyan: #00d9ff;
+  --gold: #d0b345;
+  --text: #e6f7ff;
+  --muted: rgba(230, 247, 255, 0.55);
+  --panel: rgba(10, 16, 28, 0.72);
+  --border: rgba(0, 217, 255, 0.35);
+}
+
+#zairo-ui {
+  position: fixed;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 24px;
+  z-index: 20;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  pointer-events: none;
+}
+#zairo-ui > * { pointer-events: auto; width: min(720px, 100%); }
+
+#transcript { text-align: center; text-shadow: 0 0 12px rgba(0, 0, 0, 0.9); pointer-events: none; }
+#transcript p { margin: 4px 0; line-height: 1.45; }
+#user-line { color: var(--muted); font-size: 0.95rem; }
+#zairo-line { font-size: 1.15rem; letter-spacing: 0.01em; }
+#tool-line { color: var(--gold); font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; min-height: 1em; }
+
+#input-bar {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+}
+#input-bar input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-size: 1rem;
+  padding: 0 8px;
+}
+#input-bar button, #settings button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--cyan);
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+#mic.recording { background: var(--gold); color: #000; border-color: var(--gold); box-shadow: 0 0 18px var(--gold); }
+#mic.busy { opacity: 0.5; cursor: progress; }
+
+#settings {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 0.85rem;
+}
+#settings[hidden] { display: none; }
+#settings label { display: grid; gap: 4px; color: var(--muted); }
+#settings select { background: #0a101c; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+#settings button { width: auto; height: auto; padding: 8px 14px; justify-self: start; }
