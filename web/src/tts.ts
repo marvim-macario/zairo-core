@@ -20,6 +20,17 @@ const MS_PER_CHAR = 70;
 // Um AudioContext para medir o volume do áudio vindo do servidor.
 let audioCtx: AudioContext | null = null;
 
+/**
+ * O AnalyserNode mede o som antes de ele sair no alto-falante. Este é o atraso
+ * até o som ser ouvido, para a animação esperar por ele. Sem outputLatency
+ * (alguns navegadores), assume 100 ms.
+ */
+function outputLatencyMs(): number {
+  if (!audioCtx) return 0;
+  const out = audioCtx.outputLatency > 0 ? audioCtx.outputLatency : 0.1;
+  return (out + (audioCtx.baseLatency || 0)) * 1000;
+}
+
 function meter(audio: HTMLAudioElement): AnalyserNode | null {
   try {
     audioCtx ??= new AudioContext();
@@ -44,8 +55,11 @@ export function createSpeaker(
     voiceName?: string;
     onStart?: () => void;
     onEnd?: () => void;
-    /** Volume da fala de 0 a 1, a cada quadro, para animar a esfera. */
-    onLevel?: (level: number) => void;
+    /**
+     * Volume da fala de 0 a 1, a cada quadro, para animar a esfera. latencyMs é
+     * quanto tempo falta para esse som sair no alto-falante.
+     */
+    onLevel?: (level: number, latencyMs: number) => void;
   } = {},
 ): Speaker {
   let queue: Promise<void> = Promise.resolve();
@@ -77,13 +91,13 @@ export function createSpeaker(
       let wordLength = 0;
       const tick = (t: number) => {
         const p = (t - wordStart) / wordLength;
-        opts.onLevel?.(p >= 0 && p < 1 ? 0.85 * Math.sin(Math.PI * p) : 0);
+        opts.onLevel?.(p >= 0 && p < 1 ? 0.85 * Math.sin(Math.PI * p) : 0, 0);
         raf = requestAnimationFrame(tick);
       };
       const done = () => {
         cancelAnimationFrame(raf);
         clearTimeout(fallback);
-        opts.onLevel?.(0);
+        opts.onLevel?.(0, 0);
         stopCurrent = null;
         resolve();
       };
@@ -132,20 +146,26 @@ export function createSpeaker(
     const analyser = meter(audio);
     const samples = new Float32Array(analyser?.fftSize ?? 0);
     let raf = 0;
+    let heard = false;
+    let startTimer = 0;
     const tick = () => {
       analyser!.getFloatTimeDomainData(samples);
       let sum = 0;
       for (const s of samples) sum += s * s;
       const level = Math.min(1, Math.sqrt(sum / samples.length) * 3);
-      // "Falando" começa com o primeiro som audível, não com o evento "playing"
-      if (level > 0.03) begin();
-      opts.onLevel?.(level);
+      const latency = outputLatencyMs();
+      // "Falando" começa quando o primeiro som audível chega ao alto-falante
+      if (level > 0.03 && !heard) {
+        heard = true;
+        startTimer = window.setTimeout(begin, latency);
+      }
+      opts.onLevel?.(level, latency);
       raf = requestAnimationFrame(tick);
     };
     await new Promise<void>((resolve) => {
       const done = () => {
         cancelAnimationFrame(raf);
-        opts.onLevel?.(0);
+        opts.onLevel?.(0, outputLatencyMs());
         stopCurrent = null;
         resolve();
       };
@@ -155,6 +175,8 @@ export function createSpeaker(
       };
       audio.onended = audio.onerror = done;
       stopCurrent = () => {
+        // Interrompido antes de o som chegar ao alto-falante: não começa a "falar"
+        clearTimeout(startTimer);
         audio.pause();
         done();
       };

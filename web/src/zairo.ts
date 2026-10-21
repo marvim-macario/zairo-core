@@ -3,7 +3,10 @@ import { createRecognizer, type Recognizer, type SttProvider } from "./stt.js";
 import { browserVoices, createSpeaker, SentenceBuffer, type Speaker, type TtsProvider } from "./tts.js";
 
 type SphereState = "idle" | "active" | "listening" | "speaking";
-const hud = window as unknown as { setState?: (s: string) => void; setVoiceLevel?: (level: number) => void };
+const hud = window as unknown as {
+  setState?: (s: string) => void;
+  setVoiceLevel?: (level: number, latencyMs: number) => void;
+};
 const setSphere = (s: SphereState) => hud.setState?.(s);
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -60,7 +63,7 @@ function buildSpeaker() {
     onEnd: () => {
       if (!recognizer) setSphere(busy ? "active" : "idle");
     },
-    onLevel: (level) => hud.setVoiceLevel?.(level),
+    onLevel: (level, latencyMs) => hud.setVoiceLevel?.(level, latencyMs),
   });
 }
 
@@ -204,7 +207,10 @@ async function init() {
     userNameForSpeech = cfg.userName;
   }
   sttSelect.value = pref("stt", "whisper");
-  ttsSelect.value = pref("tts", serverTts);
+  // A voz escolhida no ⚙ vale até o padrão do servidor (ZAIRO_TTS) mudar.
+  const sameServerDefault = pref("tts.server", "") === serverTts;
+  ttsSelect.value = sameServerDefault ? pref("tts", serverTts) : serverTts;
+  setPref("tts.server", serverTts);
   fillVoices();
   buildSpeaker();
 }

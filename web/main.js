@@ -37,8 +37,13 @@ const ANIMATION = {
   // Reação do anel externo à voz
   voiceRingGain: 0.35,  // brilho extra do aro no pico da voz
   voiceRingWidth: 0.25, // quanto o aro alarga no pico (0 = não alarga)
-  voiceAttack: 12,      // velocidade de subida do nível (maior = mais rápido)
-  voiceRelease: 5       // velocidade de descida (menor = mais suave, pisca menos)
+  voiceAttack: 60,      // velocidade de subida do nível (alto = acompanha o som na hora)
+  voiceRelease: 14,     // velocidade de descida (menor = mais suave, porém mais "arrastado")
+
+  // Sincronia: o anel já espera a latência de saída do áudio informada pelo
+  // navegador. Se ainda parecer adiantado (comum em fone Bluetooth), aumente;
+  // se parecer atrasado, diminua (pode ser negativo). Em milissegundos.
+  voiceSyncOffsetMs: 0
 };
 
 // ============================================
@@ -51,12 +56,15 @@ let targetState = "idle";
 // Quão rápido o visual acompanha a troca de estado (maior = mais rápido; 6 ≈ 0,5 s)
 const STATE_RESPONSE = 6.0;
 
-// Nível da voz (0 a 1), enviado pelo TTS a cada quadro enquanto o Zairo fala
+// Nível da voz (0 a 1), enviado pelo TTS a cada quadro enquanto o Zairo fala.
+// Cada nível espera na fila até o som correspondente sair no alto-falante.
 let voiceTarget = 0;
 let voiceLevel = 0;
+const voiceQueue = []; // [quando aplicar (ms), nível]
 
-function setVoiceLevel(level) {
-  voiceTarget = Math.max(0, Math.min(1, Number(level) || 0));
+function setVoiceLevel(level, latencyMs = 0) {
+  const due = performance.now() + (Number(latencyMs) || 0) + ANIMATION.voiceSyncOffsetMs;
+  voiceQueue.push([due, Math.max(0, Math.min(1, Number(level) || 0))]);
 }
 
 // Configurações visuais para cada estado
@@ -365,6 +373,8 @@ function animate() {
   currentConfig.pulseSpeed = lerp(currentConfig.pulseSpeed, targetConfig.pulseSpeed, k);
 
   // Voz: sobe rápido (ataque) e desce um pouco mais devagar (soltura)
+  const now = performance.now();
+  while (voiceQueue.length && voiceQueue[0][0] <= now) voiceTarget = voiceQueue.shift()[1];
   const voiceRate = voiceTarget > voiceLevel ? ANIMATION.voiceAttack : ANIMATION.voiceRelease;
   voiceLevel = lerp(voiceLevel, voiceTarget, 1 - Math.exp(-deltaTime * voiceRate));
   
