@@ -23,6 +23,25 @@ const COLORS = {
 };
 
 // ============================================
+// INTENSIDADE DA ANIMAÇÃO (ajuste aqui)
+// ============================================
+
+const ANIMATION = {
+  // Estados ativo, ouvindo e falando (1 = original; menor = mais suave)
+  bloomScale: 0.5,      // brilho difuso (bloom)
+  glowScale: 0.45,      // brilho da esfera
+  motionScale: 0.6,     // velocidade de rotação, energia e pulso
+  speakingColor: 0x0f2c3a, // cor do corpo ao falar (escura, para só o aro brilhar)
+  bodyBrightness: 0.4,  // escurece o corpo roxo (ativo) e dourado (ouvindo); 1 = original
+
+  // Reação do anel externo à voz
+  voiceRingGain: 0.35,  // brilho extra do aro no pico da voz
+  voiceRingWidth: 0.25, // quanto o aro alarga no pico (0 = não alarga)
+  voiceAttack: 12,      // velocidade de subida do nível (maior = mais rápido)
+  voiceRelease: 5       // velocidade de descida (menor = mais suave, pisca menos)
+};
+
+// ============================================
 // SISTEMA DE ESTADOS DA IA
 // ============================================
 
@@ -66,18 +85,18 @@ const STATE_CONFIG = {
   },
     listening: {
       sphereColor: new THREE.Color(COLORS.gold),       // #D0B345 - dourado
-      sphereIntensity: 1.2,                            // Intensidade muito alta
+      sphereIntensity: 0.9,                            // Intensidade alta
       ringColor: new THREE.Color(COLORS.gold),         // Dourado brilhante
       ringOpacity: 0.9,                                // Anel muito visível
       ringSpeed: 0.04,                                 // Rotação rápida
       sphereRotationSpeed: { x: 0.005, y: 0.006 },    // Rotação rápida
       energySpeed: 0.6,                                // Energia rápida
-      bloomStrength: 3.5,                              // Bloom muito forte
+      bloomStrength: 3.0,                              // Bloom forte
       pulseSpeed: 3.0                                  // Pulso rápido
     },
     speaking: {
       // Corpo calmo ao falar: quem reage à voz é o anel externo (uVoice no shader)
-      sphereColor: new THREE.Color(COLORS.primary),    // #00d9ff - ciano brilhante
+      sphereColor: new THREE.Color(ANIMATION.speakingColor),
       sphereIntensity: 1.0,
       ringColor: new THREE.Color(COLORS.primary),       // Ciano brilhante
       ringOpacity: 1.0,                                // Anel totalmente visível
@@ -88,6 +107,19 @@ const STATE_CONFIG = {
       pulseSpeed: 1.5
     }
 };
+
+// Aplica ANIMATION aos estados ativos (o idle fica como está)
+for (const name of ["active", "listening", "speaking"]) {
+  const s = STATE_CONFIG[name];
+  s.bloomStrength *= ANIMATION.bloomScale;
+  s.sphereIntensity *= ANIMATION.glowScale;
+  s.energySpeed *= ANIMATION.motionScale;
+  s.pulseSpeed *= ANIMATION.motionScale;
+  s.ringSpeed *= ANIMATION.motionScale;
+  s.sphereRotationSpeed.x *= ANIMATION.motionScale;
+  s.sphereRotationSpeed.y *= ANIMATION.motionScale;
+  if (name !== "speaking") s.sphereColor.multiplyScalar(ANIMATION.bodyBrightness);
+}
 
 // Valores atuais (para transições suaves)
 let currentConfig = {
@@ -268,7 +300,9 @@ const sphereMaterial = new THREE.ShaderMaterial({
     uGold: { value: new THREE.Color(COLORS.gold) },      // #D0B345
     uEnergySpeed: { value: currentConfig.energySpeed },
     uPulseSpeed: { value: currentConfig.pulseSpeed },
-    uVoice: { value: 0 }
+    uVoice: { value: 0 },
+    uVoiceGain: { value: ANIMATION.voiceRingGain },
+    uVoiceWidth: { value: ANIMATION.voiceRingWidth }
   },
   transparent: true,
   side: THREE.FrontSide
@@ -331,7 +365,7 @@ function animate() {
   currentConfig.pulseSpeed = lerp(currentConfig.pulseSpeed, targetConfig.pulseSpeed, k);
 
   // Voz: sobe rápido (ataque) e desce um pouco mais devagar (soltura)
-  const voiceRate = voiceTarget > voiceLevel ? 35 : 12;
+  const voiceRate = voiceTarget > voiceLevel ? ANIMATION.voiceAttack : ANIMATION.voiceRelease;
   voiceLevel = lerp(voiceLevel, voiceTarget, 1 - Math.exp(-deltaTime * voiceRate));
   
   // Atualiza uniformes

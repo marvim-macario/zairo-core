@@ -24,6 +24,8 @@ export const fragmentShader = `
   uniform float uEnergySpeed;
   uniform float uPulseSpeed;
   uniform float uVoice; // nível da voz (0 a 1), só afeta o anel externo
+  uniform float uVoiceGain;  // brilho extra do aro no pico (ANIMATION.voiceRingGain)
+  uniform float uVoiceWidth; // alargamento do aro no pico (ANIMATION.voiceRingWidth)
 
   varying vec3 vNormal;
   varying vec3 vPosition;
@@ -203,8 +205,8 @@ export const fragmentShader = `
     // ANEL EXTERNO - reage à voz. A potência alta restringe o efeito à borda
     // e, com a voz, o aro fica um pouco mais largo e mais brilhante.
     float rim = 1.0 - max(dot(vNormal, viewDir), 0.0);
-    float voiceRing = pow(rim, 5.0 - uVoice * 1.0);
-    baseColor += vec3(0.0, 0.9, 1.0) * voiceRing * uVoice * 1.6;
+    float voiceRing = pow(rim, 5.0 - uVoice * uVoiceWidth);
+    baseColor += vec3(0.0, 0.9, 1.0) * voiceRing * uVoice * uVoiceGain;
 
     gl_FragColor = vec4(baseColor, alpha);
   }
