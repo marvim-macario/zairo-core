@@ -311,13 +311,27 @@ const clock = new THREE.Clock();
 // Variável para controlar transições
 let transitionProgress = 1.0;
 const TRANSITION_DURATION = 2.0; // 2 segundos para transição
+// Ouvir e falar precisam reagir na hora, senão a esfera fica atrás da voz
+const FAST_TRANSITION_DURATION = 0.35;
+
+// ============================================
+// SINCRONIA COM A VOZ
+// ============================================
+// Nível da voz do Zairo (0 a 1), atualizado a cada quadro por quem toca o áudio.
+let voiceLevelTarget = 0;
+let voiceLevel = 0;
+
+function setVoiceLevel(value) {
+  voiceLevelTarget = Math.min(1, Math.max(0, value));
+}
 
 function animate() {
   requestAnimationFrame(animate);
   
-  const elapsed = clock.getElapsedTime();
-  const time = elapsed;
+  // getDelta() antes de getElapsedTime(): este também consome o delta e deixaria o
+  // segundo valor perto de zero, travando as transições de estado
   const deltaTime = clock.getDelta();
+  const time = clock.getElapsedTime();
   
   // Detecta quando uma nova transição começa
   // IMPORTANTE: Verifica se targetState mudou desde a última frame
@@ -329,7 +343,10 @@ function animate() {
   
   // Atualiza transição de estado
   if (targetState !== currentState) {
-    transitionProgress += deltaTime / TRANSITION_DURATION;
+    const duration = targetState === "speaking" || targetState === "listening"
+      ? FAST_TRANSITION_DURATION
+      : TRANSITION_DURATION;
+    transitionProgress += deltaTime / duration;
     
     if (transitionProgress >= 1.0) {
       transitionProgress = 1.0;
@@ -388,8 +405,12 @@ function animate() {
     }
   }
   
-  // Atualiza bloom baseado no estado e intensidade global
-  bloomPass.strength = currentConfig.bloomStrength * globalIntensity;
+  // Ataque rápido e soltura mais lenta, como um medidor de VU
+  const voiceSmoothing = voiceLevelTarget > voiceLevel ? 0.5 : 0.15;
+  voiceLevel += (voiceLevelTarget - voiceLevel) * voiceSmoothing;
+
+  // Atualiza bloom baseado no estado, na intensidade global e na voz
+  bloomPass.strength = currentConfig.bloomStrength * globalIntensity * (1 + voiceLevel * 0.6);
   
   // Logs de debug removidos para evitar spam no console
   
@@ -400,8 +421,14 @@ function animate() {
   // Anel orbital removido
   
   // Pulso da esfera baseado no estado e intensidade global
+  // Enquanto há voz, o volume dela substitui boa parte do pulso automático
   const pulse = Math.sin(time * currentConfig.pulseSpeed) * 0.1 + 0.9;
-  sphere.material.uniforms.uIntensity.value = currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4);
+  const autoPulse = 0.8 + pulse * 0.4;
+  const voicePulse = 0.75 + voiceLevel * 0.9;
+  const pulseMix = Math.min(1, voiceLevel * 3);
+  sphere.material.uniforms.uIntensity.value =
+    currentConfig.sphereIntensity * globalIntensity * lerp(autoPulse, voicePulse, pulseMix);
+  sphere.scale.setScalar(1 + voiceLevel * 0.08);
   
   // Renderiza com post-processing
   try {
@@ -418,6 +445,7 @@ animate();
 
 // Exporta funções para uso externo (ex: controle por IA)
 window.setState = setState;
+window.setVoiceLevel = setVoiceLevel;
 window.setIntensity = setIntensity;
 window.setBloomIntensity = setBloomIntensity;
 window.setSphereGlowIntensity = setSphereGlowIntensity;
