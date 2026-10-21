@@ -33,10 +33,32 @@ Use o Chrome ou o Edge. Clique no microfone (ou segure Espaço) para falar, ou d
 | Ouvir | **Whisper** (padrão) | grátis | no navegador, via Transformers.js. O modelo (~150 MB) é baixado na primeira vez e fica em cache |
 | Ouvir | Web Speech | grátis | serviço do navegador |
 | Falar | **Voz do sistema** (padrão) | grátis | vozes instaladas no seu sistema |
-| Falar | Piper | grátis | no servidor, voz neural local. Instale o [Piper](https://github.com/rhasspy/piper), baixe uma voz pt_BR e preencha `PIPER_PATH` e `PIPER_MODEL` |
+| Falar | Piper | grátis | no servidor, voz neural local. Veja a instalação abaixo |
 | Falar | ElevenLabs | pago | nuvem. Preencha `ELEVENLABS_API_KEY` e `ELEVENLABS_VOICE_ID` |
 
 A escolha é feita no ⚙ da interface; o padrão vem de `ZAIRO_TTS` no `.env`. Se o Piper ou a ElevenLabs falharem, ele volta para a voz do sistema.
+
+Com Piper ou ElevenLabs, o anel da esfera segue o volume real do áudio. Com a voz do sistema o navegador não expõe o som, então o anel pulsa a cada palavra.
+
+### Instalar o Piper (Linux/WSL)
+
+```bash
+mkdir -p ~/.local/share/piper/voices && cd ~/.local/share/piper
+curl -fsSL https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz | tar -xz
+cd voices
+V=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium
+curl -fsSLO $V/pt_BR-faber-medium.onnx && curl -fsSLO $V/pt_BR-faber-medium.onnx.json
+```
+
+No `.env`:
+
+```
+ZAIRO_TTS=piper
+PIPER_PATH=/home/<você>/.local/share/piper/piper/piper
+PIPER_MODEL=/home/<você>/.local/share/piper/voices/pt_BR-faber-medium.onnx
+```
+
+Outras vozes pt_BR estão em [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/tree/v1.0.0/pt/pt_BR) (por exemplo `cadu` e `jeff`).
 
 ## Estrutura
 
