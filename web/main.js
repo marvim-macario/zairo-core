@@ -306,8 +306,8 @@ const sphereMaterial = new THREE.ShaderMaterial({
     uCameraPosition: { value: camera.position },
     uPurple: { value: new THREE.Color(COLORS.purple) }, // #78627D
     uGold: { value: new THREE.Color(COLORS.gold) },      // #D0B345
-    uEnergySpeed: { value: currentConfig.energySpeed },
-    uPulseSpeed: { value: currentConfig.pulseSpeed },
+    uEnergyTime: { value: 0 },
+    uPulseTime: { value: 0 },
     uVoice: { value: 0 },
     uVoiceGain: { value: ANIMATION.voiceRingGain },
     uVoiceWidth: { value: ANIMATION.voiceRingWidth }
@@ -344,6 +344,8 @@ scene.add(pointLight);
 // ============================================
 
 const clock = new THREE.Clock();
+let energyPhase = 0;
+let pulsePhase = 0;
 
 function animate() {
   requestAnimationFrame(animate);
@@ -383,8 +385,13 @@ function animate() {
   sphere.material.uniforms.uCameraPosition.value.copy(camera.position);
   sphere.material.uniforms.uColor.value.copy(currentConfig.sphereColor);
   sphere.material.uniforms.uIntensity.value = currentConfig.sphereIntensity;
-  sphere.material.uniforms.uEnergySpeed.value = currentConfig.energySpeed;
-  sphere.material.uniforms.uPulseSpeed.value = currentConfig.pulseSpeed;
+  // Fases acumuladas (velocidade × delta de cada quadro). Usar tempo × velocidade
+  // fazia a fase saltar quando a velocidade mudava numa transição, e o salto
+  // crescia com o tempo de página aberta (a esfera "tremia" ao trocar de estado).
+  energyPhase += currentConfig.energySpeed * deltaTime;
+  pulsePhase += currentConfig.pulseSpeed * deltaTime;
+  sphere.material.uniforms.uEnergyTime.value = energyPhase;
+  sphere.material.uniforms.uPulseTime.value = pulsePhase;
   
   // Atualiza transição de intensidade global
   if (intensityTarget !== globalIntensity) {
@@ -407,7 +414,7 @@ function animate() {
   // Anel orbital removido
   
   // Pulso da esfera baseado no estado e intensidade global
-  const pulse = Math.sin(time * currentConfig.pulseSpeed) * 0.1 + 0.9;
+  const pulse = Math.sin(pulsePhase) * 0.1 + 0.9;
   sphere.material.uniforms.uIntensity.value =
     currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4);
 

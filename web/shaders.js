@@ -21,8 +21,8 @@ export const fragmentShader = `
   uniform vec3 uGold;
   uniform float uIntensity;
   uniform vec3 uCameraPosition;
-  uniform float uEnergySpeed;
-  uniform float uPulseSpeed;
+  uniform float uEnergyTime; // fase da energia: soma de energySpeed ao longo do tempo
+  uniform float uPulseTime;  // fase do pulso: soma de pulseSpeed ao longo do tempo
   uniform float uVoice; // nível da voz (0 a 1), só afeta o anel externo
   uniform float uVoiceGain;  // brilho extra do aro no pico (ANIMATION.voiceRingGain)
   uniform float uVoiceWidth; // alargamento do aro no pico (ANIMATION.voiceRingWidth)
@@ -138,30 +138,30 @@ export const fragmentShader = `
     
     // ENERGIA VIVA - Noise orgânico pulsante (controlado por estado)
     // Múltiplas camadas de noise para efeito de energia fluindo
-    float energyFlow1 = fbm(vPosition * 2.5 + vec3(uTime * uEnergySpeed * 0.3, uTime * uEnergySpeed * 0.2, uTime * uEnergySpeed * 0.25), 4);
-    float energyFlow2 = fbm(vPosition * 4.0 + vec3(uTime * uEnergySpeed * 0.4, uTime * uEnergySpeed * 0.3, uTime * uEnergySpeed * 0.35), 3);
-    float energyFlow3 = fbm(vPosition * 6.0 + vec3(uTime * uEnergySpeed * 0.5, uTime * uEnergySpeed * 0.4, uTime * uEnergySpeed * 0.45), 2);
+    float energyFlow1 = fbm(vPosition * 2.5 + vec3(uEnergyTime * 0.3, uEnergyTime * 0.2, uEnergyTime * 0.25), 4);
+    float energyFlow2 = fbm(vPosition * 4.0 + vec3(uEnergyTime * 0.4, uEnergyTime * 0.3, uEnergyTime * 0.35), 3);
+    float energyFlow3 = fbm(vPosition * 6.0 + vec3(uEnergyTime * 0.5, uEnergyTime * 0.4, uEnergyTime * 0.45), 2);
     
     // Combina as camadas para criar padrões complexos de energia
     float energyPattern = (energyFlow1 * 0.5 + energyFlow2 * 0.3 + energyFlow3 * 0.2);
     energyPattern = energyPattern * 0.5 + 0.5; // Normaliza
     
     // Pulso de energia viva - respiração orgânica (controlado por estado)
-    float breathing = sin(uTime * uPulseSpeed * 0.4) * 0.5 + 0.5; // 0 a 1
-    float energyPulse = sin(uTime * uPulseSpeed + energyPattern * 10.0) * 0.3 + 0.7;
+    float breathing = sin(uPulseTime * 0.4) * 0.5 + 0.5; // 0 a 1
+    float energyPulse = sin(uPulseTime + energyPattern * 10.0) * 0.3 + 0.7;
     float livingEnergy = energyPattern * energyPulse * breathing;
     
     // Base color: azul escuro (#252F4B) com variação de energia
     vec3 baseColor = uColor * (0.5 + livingEnergy * 0.3);
     
     // Energia roxa fluindo - padrões orgânicos (controlado por estado)
-    float purpleEnergy = fbm(vPosition * 2.0 + vec3(uTime * uEnergySpeed * 0.25, uTime * uEnergySpeed * 0.15, uTime * uEnergySpeed * 0.2), 3);
+    float purpleEnergy = fbm(vPosition * 2.0 + vec3(uEnergyTime * 0.25, uEnergyTime * 0.15, uEnergyTime * 0.2), 3);
     purpleEnergy = purpleEnergy * 0.5 + 0.5;
-    purpleEnergy *= (0.6 + sin(uTime * uPulseSpeed * 0.6 + purpleEnergy * 8.0) * 0.4);
+    purpleEnergy *= (0.6 + sin(uPulseTime * 0.6 + purpleEnergy * 8.0) * 0.4);
     baseColor = mix(baseColor, uPurple * 0.9, purpleEnergy * 0.7);
     
     // Ondas de energia - efeito de corrente (controlado por estado)
-    float energyWaves = sin(dot(vPosition, vec3(1.0, 1.0, 1.0)) * 3.0 + uTime * uEnergySpeed * 2.0) * 0.5 + 0.5;
+    float energyWaves = sin(dot(vPosition, vec3(1.0, 1.0, 1.0)) * 3.0 + uEnergyTime * 2.0) * 0.5 + 0.5;
     energyWaves *= fbm(vPosition * 1.5 + uTime * 0.1, 2);
     baseColor += vec3(0.1, 0.15, 0.2) * energyWaves * livingEnergy;
     
@@ -170,7 +170,7 @@ export const fragmentShader = `
     float chromaticOffset = fresnel * 0.02;
     
     // ENERGIA VIVA nas bordas - glow pulsante (controlado por estado)
-    float energyGlow = fresnel * (1.0 + sin(uTime * uPulseSpeed + fresnel * 5.0) * 0.3);
+    float energyGlow = fresnel * (1.0 + sin(uPulseTime + fresnel * 5.0) * 0.3);
     
     // Ciano nas bordas (dispersão azul) - energia pulsante
     vec3 cyanRefraction = vec3(0.0, 0.9, 1.0) * energyGlow * uIntensity * 3.5;
@@ -199,7 +199,7 @@ export const fragmentShader = `
     
     // Alpha pulsante - respiração de energia (controlado por estado)
     float alphaPulse = 0.75 + fresnel * 0.2;
-    alphaPulse += sin(uTime * uPulseSpeed * 0.5 + energyPattern * 8.0) * 0.05; // Pulso sutil
+    alphaPulse += sin(uPulseTime * 0.5 + energyPattern * 8.0) * 0.05; // Pulso sutil
     float alpha = alphaPulse;
 
     // ANEL EXTERNO - reage à voz. A potência alta restringe o efeito à borda
