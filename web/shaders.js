@@ -23,7 +23,8 @@ export const fragmentShader = `
   uniform vec3 uCameraPosition;
   uniform float uEnergySpeed;
   uniform float uPulseSpeed;
-  
+  uniform float uVoice; // nível da voz (0 a 1), só afeta o anel externo
+
   varying vec3 vNormal;
   varying vec3 vPosition;
   varying vec3 vWorldPosition;
@@ -198,7 +199,13 @@ export const fragmentShader = `
     float alphaPulse = 0.75 + fresnel * 0.2;
     alphaPulse += sin(uTime * uPulseSpeed * 0.5 + energyPattern * 8.0) * 0.05; // Pulso sutil
     float alpha = alphaPulse;
-    
+
+    // ANEL EXTERNO - reage à voz. A potência alta restringe o efeito à borda
+    // e, com a voz, o aro fica um pouco mais largo e mais brilhante.
+    float rim = 1.0 - max(dot(vNormal, viewDir), 0.0);
+    float voiceRing = pow(rim, 5.0 - uVoice * 1.0);
+    baseColor += vec3(0.0, 0.9, 1.0) * voiceRing * uVoice * 1.6;
+
     gl_FragColor = vec4(baseColor, alpha);
   }
 `;

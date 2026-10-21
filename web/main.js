@@ -76,15 +76,16 @@ const STATE_CONFIG = {
       pulseSpeed: 3.0                                  // Pulso rápido
     },
     speaking: {
+      // Corpo calmo ao falar: quem reage à voz é o anel externo (uVoice no shader)
       sphereColor: new THREE.Color(COLORS.primary),    // #00d9ff - ciano brilhante
-      sphereIntensity: 1.5,                            // Intensidade máxima
+      sphereIntensity: 1.0,
       ringColor: new THREE.Color(COLORS.primary),       // Ciano brilhante
       ringOpacity: 1.0,                                // Anel totalmente visível
-      ringSpeed: 0.06,                                 // Rotação muito rápida
-      sphereRotationSpeed: { x: 0.008, y: 0.010 },    // Rotação muito rápida
-      energySpeed: 0.8,                                // Energia muito rápida
-      bloomStrength: 4.5,                              // Bloom extremo
-      pulseSpeed: 4.0                                  // Pulso muito rápido
+      ringSpeed: 0.02,
+      sphereRotationSpeed: { x: 0.003, y: 0.004 },
+      energySpeed: 0.3,
+      bloomStrength: 3.0,
+      pulseSpeed: 1.5
     }
 };
 
@@ -266,7 +267,8 @@ const sphereMaterial = new THREE.ShaderMaterial({
     uPurple: { value: new THREE.Color(COLORS.purple) }, // #78627D
     uGold: { value: new THREE.Color(COLORS.gold) },      // #D0B345
     uEnergySpeed: { value: currentConfig.energySpeed },
-    uPulseSpeed: { value: currentConfig.pulseSpeed }
+    uPulseSpeed: { value: currentConfig.pulseSpeed },
+    uVoice: { value: 0 }
   },
   transparent: true,
   side: THREE.FrontSide
@@ -350,7 +352,7 @@ function animate() {
   }
   
   // Atualiza bloom baseado no estado e intensidade global
-  bloomPass.strength = currentConfig.bloomStrength * globalIntensity * (1 + voiceLevel * 0.5);
+  bloomPass.strength = currentConfig.bloomStrength * globalIntensity;
   
   // Logs de debug removidos para evitar spam no console
   
@@ -363,10 +365,10 @@ function animate() {
   // Pulso da esfera baseado no estado e intensidade global
   const pulse = Math.sin(time * currentConfig.pulseSpeed) * 0.1 + 0.9;
   sphere.material.uniforms.uIntensity.value =
-    currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4) * (1 + voiceLevel * 0.8);
+    currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4);
 
-  // A esfera "respira" com a voz
-  sphere.scale.setScalar(1 + voiceLevel * 0.08);
+  // A voz só mexe no anel externo (aro brilhante); o corpo da esfera não reage
+  sphere.material.uniforms.uVoice.value = voiceLevel;
   
   // Renderiza com post-processing
   try {

@@ -14,6 +14,9 @@ export interface Speaker {
   busy(): boolean;
 }
 
+// Duração aproximada de cada letra falada pela voz do sistema (velocidade normal).
+const MS_PER_CHAR = 70;
+
 // Um AudioContext para medir o volume do áudio vindo do servidor.
 let audioCtx: AudioContext | null = null;
 
@@ -65,28 +68,38 @@ export function createSpeaker(
       const voice = speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
       if (voice) u.voice = voice;
 
-      // A voz do sistema não expõe o áudio, então o volume é estimado: um ritmo
-      // de sílabas (~4,5 Hz) com ênfase em cada palavra que o navegador anuncia.
+      // A voz do sistema não expõe o áudio, então não há volume real. O nível segue
+      // só os eventos de palavra: um pulso por palavra, com duração proporcional
+      // ao tamanho dela, e zero nas pausas.
       let raf = 0;
-      let accent = 0;
+      let fallback = 0;
+      let wordStart = 0;
+      let wordLength = 0;
       const tick = (t: number) => {
-        const syllable = 0.5 + 0.5 * Math.sin((t / 1000) * Math.PI * 9 + Math.sin(t / 370) * 2);
-        accent *= 0.9;
-        opts.onLevel?.(Math.min(1, 0.2 + 0.45 * syllable + accent));
+        const p = (t - wordStart) / wordLength;
+        opts.onLevel?.(p >= 0 && p < 1 ? 0.85 * Math.sin(Math.PI * p) : 0);
         raf = requestAnimationFrame(tick);
       };
       const done = () => {
         cancelAnimationFrame(raf);
+        clearTimeout(fallback);
         opts.onLevel?.(0);
         stopCurrent = null;
         resolve();
       };
+      // onstart chega ~0,5 s antes do som; o som começa de fato na primeira
+      // palavra. Se a voz não anunciar palavras, começa assim mesmo.
       u.onstart = () => {
-        begin();
         raf = requestAnimationFrame(tick);
+        fallback = window.setTimeout(begin, 800);
       };
       u.onboundary = (e) => {
-        if (e.name === "word") accent = 0.45;
+        if (e.name !== "word") return;
+        clearTimeout(fallback);
+        begin();
+        const length = e.charLength || (/^\S+/.exec(text.slice(e.charIndex))?.[0].length ?? 4);
+        wordStart = performance.now();
+        wordLength = Math.max(120, length * MS_PER_CHAR);
       };
       u.onend = u.onerror = done;
       stopCurrent = done;
