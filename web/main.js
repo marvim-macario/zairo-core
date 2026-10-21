@@ -35,8 +35,8 @@ const ANIMATION = {
   bodyBrightness: 0.4,  // escurece o corpo roxo (ativo) e dourado (ouvindo); 1 = original
 
   // Reação do anel externo à voz
-  voiceRingGain: 0.35,  // brilho extra do aro no pico da voz
-  voiceRingWidth: 0.25, // quanto o aro alarga no pico (0 = não alarga)
+  voiceRingGain: 0.3675, // brilho extra do aro no pico da voz
+  voiceRingWidth: 0.2625, // quanto o aro alarga no pico (0 = não alarga)
   voiceAttack: 60,      // velocidade de subida do nível (alto = acompanha o som na hora)
   voiceRelease: 14,     // velocidade de descida (menor = mais suave, porém mais "arrastado")
 

@@ -54,14 +54,24 @@ function setPref(key: string, value: string) {
 let serverTts: TtsProvider = "browser";
 let speaker: Speaker;
 
+const END_GRACE_MS = 400;
+let endTimer = 0;
+
 function buildSpeaker() {
   speaker?.cancel();
   speaker = createSpeaker(ttsSelect.value as TtsProvider, {
     voiceName: voiceSelect.value,
-    onStart: () => setSphere("speaking"),
-    // Se a resposta ainda está chegando, a esfera espera a próxima frase em "active".
+    onStart: () => {
+      clearTimeout(endTimer);
+      setSphere("speaking");
+    },
+    // A pausa entre frases não muda o estado: só sai de "falando" se nenhuma fala
+    // nova começar em END_GRACE_MS. Se a resposta ainda está chegando, vai para "active".
     onEnd: () => {
-      if (!recognizer) setSphere(busy ? "active" : "idle");
+      clearTimeout(endTimer);
+      endTimer = window.setTimeout(() => {
+        if (!recognizer && !speaker.busy()) setSphere(busy ? "active" : "idle");
+      }, END_GRACE_MS);
     },
     onLevel: (level, latencyMs) => hud.setVoiceLevel?.(level, latencyMs),
   });
