@@ -106,18 +106,28 @@ export function createSpeaker(
       speechSynthesis.speak(u);
     });
 
-  const speakServer = async (text: string) => {
-    const res = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, provider }),
-    });
-    if (!res.ok) {
+  // Pede o áudio assim que a frase chega, para que a próxima já esteja pronta
+  // quando a anterior terminar de tocar (sem pausa entre frases).
+  const fetchServer = async (text: string): Promise<Blob | null> => {
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, provider }),
+      });
+      if (res.ok) return await res.blob();
       const { error } = await res.json().catch(() => ({ error: res.statusText }));
       console.warn(`TTS ${provider} falhou (${error}); usando a voz do sistema.`);
-      return speakBrowser(text);
+    } catch (err) {
+      console.warn(`TTS ${provider} falhou (${(err as Error).message}); usando a voz do sistema.`);
     }
-    const url = URL.createObjectURL(await res.blob());
+    return null;
+  };
+
+  const speakServer = async (text: string, audioBlob: Promise<Blob | null>) => {
+    const blob = await audioBlob;
+    if (!blob) return speakBrowser(text);
+    const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     const analyser = meter(audio);
     const samples = new Float32Array(analyser?.fftSize ?? 0);
@@ -126,7 +136,10 @@ export function createSpeaker(
       analyser!.getFloatTimeDomainData(samples);
       let sum = 0;
       for (const s of samples) sum += s * s;
-      opts.onLevel?.(Math.min(1, Math.sqrt(sum / samples.length) * 5));
+      const level = Math.min(1, Math.sqrt(sum / samples.length) * 3);
+      // "Falando" começa com o primeiro som audível, não com o evento "playing"
+      if (level > 0.03) begin();
+      opts.onLevel?.(level);
       raf = requestAnimationFrame(tick);
     };
     await new Promise<void>((resolve) => {
@@ -137,8 +150,8 @@ export function createSpeaker(
         resolve();
       };
       audio.onplaying = () => {
-        begin();
         if (analyser) raf = requestAnimationFrame(tick);
+        else begin();
       };
       audio.onended = audio.onerror = done;
       stopCurrent = () => {
@@ -150,16 +163,16 @@ export function createSpeaker(
     URL.revokeObjectURL(url);
   };
 
-  const speak = provider === "browser" ? speakBrowser : speakServer;
-
   return {
     say(text) {
       const clean = text.trim();
       if (!clean) return;
       const gen = generation;
       pending++;
+      const audioBlob = provider === "browser" ? null : fetchServer(clean);
+      const speak = () => (audioBlob ? speakServer(clean, audioBlob) : speakBrowser(clean));
       queue = queue
-        .then(() => (gen === generation ? speak(clean) : undefined))
+        .then(() => (gen === generation ? speak() : undefined))
         .finally(() => {
           if (--pending > 0) return;
           talking = false;
