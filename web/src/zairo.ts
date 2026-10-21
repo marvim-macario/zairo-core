@@ -3,7 +3,8 @@ import { createRecognizer, type Recognizer, type SttProvider } from "./stt.js";
 import { browserVoices, createSpeaker, SentenceBuffer, type Speaker, type TtsProvider } from "./tts.js";
 
 type SphereState = "idle" | "active" | "listening" | "speaking";
-const setSphere = (s: SphereState) => (window as unknown as { setState?: (s: string) => void }).setState?.(s);
+const hud = window as unknown as { setState?: (s: string) => void; setVoiceLevel?: (level: number) => void };
+const setSphere = (s: SphereState) => hud.setState?.(s);
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const userLine = $<HTMLParagraphElement>("user-line");
@@ -55,7 +56,11 @@ function buildSpeaker() {
   speaker = createSpeaker(ttsSelect.value as TtsProvider, {
     voiceName: voiceSelect.value,
     onStart: () => setSphere("speaking"),
-    onEnd: () => setSphere("idle"),
+    // Se a resposta ainda está chegando, a esfera espera a próxima frase em "active".
+    onEnd: () => {
+      if (!recognizer) setSphere(busy ? "active" : "idle");
+    },
+    onLevel: (level) => hud.setVoiceLevel?.(level),
   });
 }
 
@@ -98,7 +103,7 @@ async function ask(text: string) {
     setSphere("idle");
   } finally {
     busy = false;
-    if (!zairoLine.textContent) setSphere("idle");
+    if (!speaker.busy()) setSphere("idle");
   }
 }
 

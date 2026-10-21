@@ -28,7 +28,17 @@ const COLORS = {
 
 let currentState = "idle";
 let targetState = "idle";
-let lastTargetState = "idle"; // Rastreia mudanças no targetState para resetar transição
+
+// Quão rápido o visual acompanha a troca de estado (maior = mais rápido; 6 ≈ 0,5 s)
+const STATE_RESPONSE = 6.0;
+
+// Nível da voz (0 a 1), enviado pelo TTS a cada quadro enquanto o Zairo fala
+let voiceTarget = 0;
+let voiceLevel = 0;
+
+function setVoiceLevel(level) {
+  voiceTarget = Math.max(0, Math.min(1, Number(level) || 0));
+}
 
 // Configurações visuais para cada estado
 const STATE_CONFIG = {
@@ -95,11 +105,8 @@ let currentConfig = {
 function setState(newState) {
   if (STATE_CONFIG[newState]) {
     if (newState !== targetState) {
-      const oldTarget = targetState;
+      console.log(`🔄 Estado mudando de "${targetState}" para "${newState}"`);
       targetState = newState;
-      // Força reset da transição quando muda o targetState
-      lastTargetState = oldTarget; // Define para forçar detecção de mudança
-      console.log(`🔄 Estado mudando de "${currentState}" para "${newState}" (target: ${targetState}, lastTarget: ${lastTargetState})`);
     }
   } else {
     console.warn(`⚠️ Estado inválido: "${newState}". Estados válidos: idle, active, listening, speaking`);
@@ -169,23 +176,9 @@ function getIntensityConfig() {
   };
 }
 
-// Função de easing suave para transições
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
 // Interpolação suave entre valores
 function lerp(start, end, t) {
   return start + (end - start) * t;
-}
-
-// Interpolação de cores
-function lerpColor(color1, color2, t) {
-  const result = new THREE.Color();
-  result.r = lerp(color1.r, color2.r, t);
-  result.g = lerp(color1.g, color2.g, t);
-  result.b = lerp(color1.b, color2.b, t);
-  return result;
 }
 
 // ============================================
@@ -308,68 +301,36 @@ scene.add(pointLight);
 
 const clock = new THREE.Clock();
 
-// Variável para controlar transições
-let transitionProgress = 1.0;
-const TRANSITION_DURATION = 2.0; // 2 segundos para transição
-
 function animate() {
   requestAnimationFrame(animate);
-  
-  const elapsed = clock.getElapsedTime();
-  const time = elapsed;
-  const deltaTime = clock.getDelta();
-  
-  // Detecta quando uma nova transição começa
-  // IMPORTANTE: Verifica se targetState mudou desde a última frame
-  if (targetState !== lastTargetState) {
-    transitionProgress = 0.0; // Reset quando uma nova transição começa
-    console.log(`🔄 Transição iniciada: ${currentState} → ${targetState} (lastTarget era: ${lastTargetState})`);
-    lastTargetState = targetState; // Atualiza DEPOIS de resetar
-  }
-  
-  // Atualiza transição de estado
+
+  // getDelta() primeiro: getElapsedTime() também consome o delta e o zeraria
+  const deltaTime = Math.min(clock.getDelta(), 0.1);
+  const time = clock.elapsedTime;
+
   if (targetState !== currentState) {
-    transitionProgress += deltaTime / TRANSITION_DURATION;
-    
-    if (transitionProgress >= 1.0) {
-      transitionProgress = 1.0;
-      currentState = targetState;
-      console.log(`✅ Estado mudou para "${currentState}"`);
-    }
-    
-    // Interpola suavemente entre estados
-    const t = easeInOutCubic(Math.min(transitionProgress, 1.0));
-    const sourceConfig = STATE_CONFIG[currentState];
-    const targetConfig = STATE_CONFIG[targetState];
-    
-    // Interpola todas as propriedades
-    currentConfig.sphereColor = lerpColor(sourceConfig.sphereColor, targetConfig.sphereColor, t);
-    currentConfig.sphereIntensity = lerp(sourceConfig.sphereIntensity, targetConfig.sphereIntensity, t);
-    currentConfig.ringColor = lerpColor(sourceConfig.ringColor, targetConfig.ringColor, t);
-    currentConfig.ringOpacity = lerp(sourceConfig.ringOpacity, targetConfig.ringOpacity, t);
-    currentConfig.ringSpeed = lerp(sourceConfig.ringSpeed, targetConfig.ringSpeed, t);
-    currentConfig.sphereRotationSpeed.x = lerp(sourceConfig.sphereRotationSpeed.x, targetConfig.sphereRotationSpeed.x, t);
-    currentConfig.sphereRotationSpeed.y = lerp(sourceConfig.sphereRotationSpeed.y, targetConfig.sphereRotationSpeed.y, t);
-    currentConfig.energySpeed = lerp(sourceConfig.energySpeed, targetConfig.energySpeed, t);
-    currentConfig.bloomStrength = lerp(sourceConfig.bloomStrength, targetConfig.bloomStrength, t);
-    currentConfig.pulseSpeed = lerp(sourceConfig.pulseSpeed, targetConfig.pulseSpeed, t);
-  } else {
-    // Quando não há transição, garante que os valores estão corretos
-    const stateConfig = STATE_CONFIG[currentState];
-    if (currentConfig.sphereIntensity !== stateConfig.sphereIntensity || 
-        currentConfig.bloomStrength !== stateConfig.bloomStrength) {
-      // Sincroniza valores se necessário
-      currentConfig.sphereColor.copy(stateConfig.sphereColor);
-      currentConfig.sphereIntensity = stateConfig.sphereIntensity;
-      currentConfig.ringColor.copy(stateConfig.ringColor);
-      currentConfig.ringOpacity = stateConfig.ringOpacity;
-      currentConfig.ringSpeed = stateConfig.ringSpeed;
-      currentConfig.sphereRotationSpeed = { ...stateConfig.sphereRotationSpeed };
-      currentConfig.energySpeed = stateConfig.energySpeed;
-      currentConfig.bloomStrength = stateConfig.bloomStrength;
-      currentConfig.pulseSpeed = stateConfig.pulseSpeed;
-    }
+    currentState = targetState;
+    console.log(`✅ Estado mudou para "${currentState}"`);
   }
+
+  // Aproxima os valores atuais do estado alvo a cada quadro. Se o estado mudar
+  // no meio do caminho, a transição continua de onde está, sem saltos.
+  const k = 1 - Math.exp(-deltaTime * STATE_RESPONSE);
+  const targetConfig = STATE_CONFIG[targetState];
+  currentConfig.sphereColor.lerp(targetConfig.sphereColor, k);
+  currentConfig.sphereIntensity = lerp(currentConfig.sphereIntensity, targetConfig.sphereIntensity, k);
+  currentConfig.ringColor.lerp(targetConfig.ringColor, k);
+  currentConfig.ringOpacity = lerp(currentConfig.ringOpacity, targetConfig.ringOpacity, k);
+  currentConfig.ringSpeed = lerp(currentConfig.ringSpeed, targetConfig.ringSpeed, k);
+  currentConfig.sphereRotationSpeed.x = lerp(currentConfig.sphereRotationSpeed.x, targetConfig.sphereRotationSpeed.x, k);
+  currentConfig.sphereRotationSpeed.y = lerp(currentConfig.sphereRotationSpeed.y, targetConfig.sphereRotationSpeed.y, k);
+  currentConfig.energySpeed = lerp(currentConfig.energySpeed, targetConfig.energySpeed, k);
+  currentConfig.bloomStrength = lerp(currentConfig.bloomStrength, targetConfig.bloomStrength, k);
+  currentConfig.pulseSpeed = lerp(currentConfig.pulseSpeed, targetConfig.pulseSpeed, k);
+
+  // Voz: sobe rápido (ataque) e desce um pouco mais devagar (soltura)
+  const voiceRate = voiceTarget > voiceLevel ? 35 : 12;
+  voiceLevel = lerp(voiceLevel, voiceTarget, 1 - Math.exp(-deltaTime * voiceRate));
   
   // Atualiza uniformes
   sphere.material.uniforms.uTime.value = time;
@@ -389,7 +350,7 @@ function animate() {
   }
   
   // Atualiza bloom baseado no estado e intensidade global
-  bloomPass.strength = currentConfig.bloomStrength * globalIntensity;
+  bloomPass.strength = currentConfig.bloomStrength * globalIntensity * (1 + voiceLevel * 0.5);
   
   // Logs de debug removidos para evitar spam no console
   
@@ -401,7 +362,11 @@ function animate() {
   
   // Pulso da esfera baseado no estado e intensidade global
   const pulse = Math.sin(time * currentConfig.pulseSpeed) * 0.1 + 0.9;
-  sphere.material.uniforms.uIntensity.value = currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4);
+  sphere.material.uniforms.uIntensity.value =
+    currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4) * (1 + voiceLevel * 0.8);
+
+  // A esfera "respira" com a voz
+  sphere.scale.setScalar(1 + voiceLevel * 0.08);
   
   // Renderiza com post-processing
   try {
@@ -418,6 +383,7 @@ animate();
 
 // Exporta funções para uso externo (ex: controle por IA)
 window.setState = setState;
+window.setVoiceLevel = setVoiceLevel;
 window.setIntensity = setIntensity;
 window.setBloomIntensity = setBloomIntensity;
 window.setSphereGlowIntensity = setSphereGlowIntensity;

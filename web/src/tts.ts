@@ -10,6 +10,25 @@ export interface Speaker {
   cancel(): void;
   /** Resolve quando a fila terminar. */
   idle(): Promise<void>;
+  /** Há fala tocando ou na fila. */
+  busy(): boolean;
+}
+
+// Um AudioContext para medir o volume do áudio vindo do servidor.
+let audioCtx: AudioContext | null = null;
+
+function meter(audio: HTMLAudioElement): AnalyserNode | null {
+  try {
+    audioCtx ??= new AudioContext();
+    void audioCtx.resume();
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    audioCtx.createMediaElementSource(audio).connect(analyser);
+    analyser.connect(audioCtx.destination);
+    return analyser;
+  } catch {
+    return null;
+  }
 }
 
 export function browserVoices(): SpeechSynthesisVoice[] {
@@ -18,12 +37,26 @@ export function browserVoices(): SpeechSynthesisVoice[] {
 
 export function createSpeaker(
   provider: TtsProvider,
-  opts: { voiceName?: string; onStart?: () => void; onEnd?: () => void } = {},
+  opts: {
+    voiceName?: string;
+    onStart?: () => void;
+    onEnd?: () => void;
+    /** Volume da fala de 0 a 1, a cada quadro, para animar a esfera. */
+    onLevel?: (level: number) => void;
+  } = {},
 ): Speaker {
   let queue: Promise<void> = Promise.resolve();
   let pending = 0;
   let generation = 0;
-  let current: HTMLAudioElement | null = null;
+  let talking = false;
+  let stopCurrent: (() => void) | null = null;
+
+  // onStart só dispara quando o som realmente começa, não quando a frase entra na fila.
+  const begin = () => {
+    if (talking) return;
+    talking = true;
+    opts.onStart?.();
+  };
 
   const speakBrowser = (text: string) =>
     new Promise<void>((resolve) => {
@@ -31,7 +64,32 @@ export function createSpeaker(
       u.lang = "pt-BR";
       const voice = speechSynthesis.getVoices().find((v) => v.name === opts.voiceName);
       if (voice) u.voice = voice;
-      u.onend = u.onerror = () => resolve();
+
+      // A voz do sistema não expõe o áudio, então o volume é estimado: um ritmo
+      // de sílabas (~4,5 Hz) com ênfase em cada palavra que o navegador anuncia.
+      let raf = 0;
+      let accent = 0;
+      const tick = (t: number) => {
+        const syllable = 0.5 + 0.5 * Math.sin((t / 1000) * Math.PI * 9 + Math.sin(t / 370) * 2);
+        accent *= 0.9;
+        opts.onLevel?.(Math.min(1, 0.2 + 0.45 * syllable + accent));
+        raf = requestAnimationFrame(tick);
+      };
+      const done = () => {
+        cancelAnimationFrame(raf);
+        opts.onLevel?.(0);
+        stopCurrent = null;
+        resolve();
+      };
+      u.onstart = () => {
+        begin();
+        raf = requestAnimationFrame(tick);
+      };
+      u.onboundary = (e) => {
+        if (e.name === "word") accent = 0.45;
+      };
+      u.onend = u.onerror = done;
+      stopCurrent = done;
       speechSynthesis.speak(u);
     });
 
@@ -47,13 +105,36 @@ export function createSpeaker(
       return speakBrowser(text);
     }
     const url = URL.createObjectURL(await res.blob());
-    current = new Audio(url);
+    const audio = new Audio(url);
+    const analyser = meter(audio);
+    const samples = new Float32Array(analyser?.fftSize ?? 0);
+    let raf = 0;
+    const tick = () => {
+      analyser!.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const s of samples) sum += s * s;
+      opts.onLevel?.(Math.min(1, Math.sqrt(sum / samples.length) * 5));
+      raf = requestAnimationFrame(tick);
+    };
     await new Promise<void>((resolve) => {
-      current!.onended = current!.onerror = () => resolve();
-      void current!.play().catch(() => resolve());
+      const done = () => {
+        cancelAnimationFrame(raf);
+        opts.onLevel?.(0);
+        stopCurrent = null;
+        resolve();
+      };
+      audio.onplaying = () => {
+        begin();
+        if (analyser) raf = requestAnimationFrame(tick);
+      };
+      audio.onended = audio.onerror = done;
+      stopCurrent = () => {
+        audio.pause();
+        done();
+      };
+      void audio.play().catch(done);
     });
     URL.revokeObjectURL(url);
-    current = null;
   };
 
   const speak = provider === "browser" ? speakBrowser : speakServer;
@@ -63,19 +144,22 @@ export function createSpeaker(
       const clean = text.trim();
       if (!clean) return;
       const gen = generation;
-      if (pending++ === 0) opts.onStart?.();
+      pending++;
       queue = queue
         .then(() => (gen === generation ? speak(clean) : undefined))
         .finally(() => {
-          if (--pending === 0) opts.onEnd?.();
+          if (--pending > 0) return;
+          talking = false;
+          opts.onEnd?.();
         });
     },
     cancel() {
       generation++;
       speechSynthesis.cancel();
-      current?.pause();
+      stopCurrent?.();
     },
     idle: () => queue,
+    busy: () => pending > 0,
   };
 }
 
