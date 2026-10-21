@@ -23,12 +23,49 @@ const COLORS = {
 };
 
 // ============================================
+// INTENSIDADE DA ANIMAÇÃO (ajuste aqui)
+// ============================================
+
+const ANIMATION = {
+  // Estados ativo, ouvindo e falando (1 = original; menor = mais suave)
+  bloomScale: 0.5,      // brilho difuso (bloom)
+  glowScale: 0.45,      // brilho da esfera
+  motionScale: 0.6,     // velocidade de rotação, energia e pulso
+  speakingColor: 0x0f2c3a, // cor do corpo ao falar (escura, para só o aro brilhar)
+  bodyBrightness: 0.4,  // escurece o corpo roxo (ativo) e dourado (ouvindo); 1 = original
+
+  // Reação do anel externo à voz
+  voiceRingGain: 0.3675, // brilho extra do aro no pico da voz
+  voiceRingWidth: 0.2625, // quanto o aro alarga no pico (0 = não alarga)
+  voiceAttack: 60,      // velocidade de subida do nível (alto = acompanha o som na hora)
+  voiceRelease: 14,     // velocidade de descida (menor = mais suave, porém mais "arrastado")
+
+  // Sincronia: o anel já espera a latência de saída do áudio informada pelo
+  // navegador. Se ainda parecer adiantado (comum em fone Bluetooth), aumente;
+  // se parecer atrasado, diminua (pode ser negativo). Em milissegundos.
+  voiceSyncOffsetMs: 0
+};
+
+// ============================================
 // SISTEMA DE ESTADOS DA IA
 // ============================================
 
 let currentState = "idle";
 let targetState = "idle";
-let lastTargetState = "idle"; // Rastreia mudanças no targetState para resetar transição
+
+// Quão rápido o visual acompanha a troca de estado (maior = mais rápido; 6 ≈ 0,5 s)
+const STATE_RESPONSE = 6.0;
+
+// Nível da voz (0 a 1), enviado pelo TTS a cada quadro enquanto o Zairo fala.
+// Cada nível espera na fila até o som correspondente sair no alto-falante.
+let voiceTarget = 0;
+let voiceLevel = 0;
+const voiceQueue = []; // [quando aplicar (ms), nível]
+
+function setVoiceLevel(level, latencyMs = 0) {
+  const due = performance.now() + (Number(latencyMs) || 0) + ANIMATION.voiceSyncOffsetMs;
+  voiceQueue.push([due, Math.max(0, Math.min(1, Number(level) || 0))]);
+}
 
 // Configurações visuais para cada estado
 const STATE_CONFIG = {
@@ -56,27 +93,41 @@ const STATE_CONFIG = {
   },
     listening: {
       sphereColor: new THREE.Color(COLORS.gold),       // #D0B345 - dourado
-      sphereIntensity: 1.2,                            // Intensidade muito alta
+      sphereIntensity: 0.9,                            // Intensidade alta
       ringColor: new THREE.Color(COLORS.gold),         // Dourado brilhante
       ringOpacity: 0.9,                                // Anel muito visível
       ringSpeed: 0.04,                                 // Rotação rápida
       sphereRotationSpeed: { x: 0.005, y: 0.006 },    // Rotação rápida
       energySpeed: 0.6,                                // Energia rápida
-      bloomStrength: 3.5,                              // Bloom muito forte
+      bloomStrength: 3.0,                              // Bloom forte
       pulseSpeed: 3.0                                  // Pulso rápido
     },
     speaking: {
-      sphereColor: new THREE.Color(COLORS.primary),    // #00d9ff - ciano brilhante
-      sphereIntensity: 1.5,                            // Intensidade máxima
+      // Corpo calmo ao falar: quem reage à voz é o anel externo (uVoice no shader)
+      sphereColor: new THREE.Color(ANIMATION.speakingColor),
+      sphereIntensity: 1.0,
       ringColor: new THREE.Color(COLORS.primary),       // Ciano brilhante
       ringOpacity: 1.0,                                // Anel totalmente visível
-      ringSpeed: 0.06,                                 // Rotação muito rápida
-      sphereRotationSpeed: { x: 0.008, y: 0.010 },    // Rotação muito rápida
-      energySpeed: 0.8,                                // Energia muito rápida
-      bloomStrength: 4.5,                              // Bloom extremo
-      pulseSpeed: 4.0                                  // Pulso muito rápido
+      ringSpeed: 0.02,
+      sphereRotationSpeed: { x: 0.003, y: 0.004 },
+      energySpeed: 0.3,
+      bloomStrength: 3.0,
+      pulseSpeed: 1.5
     }
 };
+
+// Aplica ANIMATION aos estados ativos (o idle fica como está)
+for (const name of ["active", "listening", "speaking"]) {
+  const s = STATE_CONFIG[name];
+  s.bloomStrength *= ANIMATION.bloomScale;
+  s.sphereIntensity *= ANIMATION.glowScale;
+  s.energySpeed *= ANIMATION.motionScale;
+  s.pulseSpeed *= ANIMATION.motionScale;
+  s.ringSpeed *= ANIMATION.motionScale;
+  s.sphereRotationSpeed.x *= ANIMATION.motionScale;
+  s.sphereRotationSpeed.y *= ANIMATION.motionScale;
+  if (name !== "speaking") s.sphereColor.multiplyScalar(ANIMATION.bodyBrightness);
+}
 
 // Valores atuais (para transições suaves)
 let currentConfig = {
@@ -95,11 +146,8 @@ let currentConfig = {
 function setState(newState) {
   if (STATE_CONFIG[newState]) {
     if (newState !== targetState) {
-      const oldTarget = targetState;
+      console.log(`🔄 Estado mudando de "${targetState}" para "${newState}"`);
       targetState = newState;
-      // Força reset da transição quando muda o targetState
-      lastTargetState = oldTarget; // Define para forçar detecção de mudança
-      console.log(`🔄 Estado mudando de "${currentState}" para "${newState}" (target: ${targetState}, lastTarget: ${lastTargetState})`);
     }
   } else {
     console.warn(`⚠️ Estado inválido: "${newState}". Estados válidos: idle, active, listening, speaking`);
@@ -169,23 +217,9 @@ function getIntensityConfig() {
   };
 }
 
-// Função de easing suave para transições
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
 // Interpolação suave entre valores
 function lerp(start, end, t) {
   return start + (end - start) * t;
-}
-
-// Interpolação de cores
-function lerpColor(color1, color2, t) {
-  const result = new THREE.Color();
-  result.r = lerp(color1.r, color2.r, t);
-  result.g = lerp(color1.g, color2.g, t);
-  result.b = lerp(color1.b, color2.b, t);
-  return result;
 }
 
 // ============================================
@@ -272,8 +306,11 @@ const sphereMaterial = new THREE.ShaderMaterial({
     uCameraPosition: { value: camera.position },
     uPurple: { value: new THREE.Color(COLORS.purple) }, // #78627D
     uGold: { value: new THREE.Color(COLORS.gold) },      // #D0B345
-    uEnergySpeed: { value: currentConfig.energySpeed },
-    uPulseSpeed: { value: currentConfig.pulseSpeed }
+    uEnergyTime: { value: 0 },
+    uPulseTime: { value: 0 },
+    uVoice: { value: 0 },
+    uVoiceGain: { value: ANIMATION.voiceRingGain },
+    uVoiceWidth: { value: ANIMATION.voiceRingWidth }
   },
   transparent: true,
   side: THREE.FrontSide
@@ -307,77 +344,54 @@ scene.add(pointLight);
 // ============================================
 
 const clock = new THREE.Clock();
-
-// Variável para controlar transições
-let transitionProgress = 1.0;
-const TRANSITION_DURATION = 2.0; // 2 segundos para transição
+let energyPhase = 0;
+let pulsePhase = 0;
 
 function animate() {
   requestAnimationFrame(animate);
-  
-  const elapsed = clock.getElapsedTime();
-  const time = elapsed;
-  const deltaTime = clock.getDelta();
-  
-  // Detecta quando uma nova transição começa
-  // IMPORTANTE: Verifica se targetState mudou desde a última frame
-  if (targetState !== lastTargetState) {
-    transitionProgress = 0.0; // Reset quando uma nova transição começa
-    console.log(`🔄 Transição iniciada: ${currentState} → ${targetState} (lastTarget era: ${lastTargetState})`);
-    lastTargetState = targetState; // Atualiza DEPOIS de resetar
-  }
-  
-  // Atualiza transição de estado
+
+  // getDelta() primeiro: getElapsedTime() também consome o delta e o zeraria
+  const deltaTime = Math.min(clock.getDelta(), 0.1);
+  const time = clock.elapsedTime;
+
   if (targetState !== currentState) {
-    transitionProgress += deltaTime / TRANSITION_DURATION;
-    
-    if (transitionProgress >= 1.0) {
-      transitionProgress = 1.0;
-      currentState = targetState;
-      console.log(`✅ Estado mudou para "${currentState}"`);
-    }
-    
-    // Interpola suavemente entre estados
-    const t = easeInOutCubic(Math.min(transitionProgress, 1.0));
-    const sourceConfig = STATE_CONFIG[currentState];
-    const targetConfig = STATE_CONFIG[targetState];
-    
-    // Interpola todas as propriedades
-    currentConfig.sphereColor = lerpColor(sourceConfig.sphereColor, targetConfig.sphereColor, t);
-    currentConfig.sphereIntensity = lerp(sourceConfig.sphereIntensity, targetConfig.sphereIntensity, t);
-    currentConfig.ringColor = lerpColor(sourceConfig.ringColor, targetConfig.ringColor, t);
-    currentConfig.ringOpacity = lerp(sourceConfig.ringOpacity, targetConfig.ringOpacity, t);
-    currentConfig.ringSpeed = lerp(sourceConfig.ringSpeed, targetConfig.ringSpeed, t);
-    currentConfig.sphereRotationSpeed.x = lerp(sourceConfig.sphereRotationSpeed.x, targetConfig.sphereRotationSpeed.x, t);
-    currentConfig.sphereRotationSpeed.y = lerp(sourceConfig.sphereRotationSpeed.y, targetConfig.sphereRotationSpeed.y, t);
-    currentConfig.energySpeed = lerp(sourceConfig.energySpeed, targetConfig.energySpeed, t);
-    currentConfig.bloomStrength = lerp(sourceConfig.bloomStrength, targetConfig.bloomStrength, t);
-    currentConfig.pulseSpeed = lerp(sourceConfig.pulseSpeed, targetConfig.pulseSpeed, t);
-  } else {
-    // Quando não há transição, garante que os valores estão corretos
-    const stateConfig = STATE_CONFIG[currentState];
-    if (currentConfig.sphereIntensity !== stateConfig.sphereIntensity || 
-        currentConfig.bloomStrength !== stateConfig.bloomStrength) {
-      // Sincroniza valores se necessário
-      currentConfig.sphereColor.copy(stateConfig.sphereColor);
-      currentConfig.sphereIntensity = stateConfig.sphereIntensity;
-      currentConfig.ringColor.copy(stateConfig.ringColor);
-      currentConfig.ringOpacity = stateConfig.ringOpacity;
-      currentConfig.ringSpeed = stateConfig.ringSpeed;
-      currentConfig.sphereRotationSpeed = { ...stateConfig.sphereRotationSpeed };
-      currentConfig.energySpeed = stateConfig.energySpeed;
-      currentConfig.bloomStrength = stateConfig.bloomStrength;
-      currentConfig.pulseSpeed = stateConfig.pulseSpeed;
-    }
+    currentState = targetState;
+    console.log(`✅ Estado mudou para "${currentState}"`);
   }
+
+  // Aproxima os valores atuais do estado alvo a cada quadro. Se o estado mudar
+  // no meio do caminho, a transição continua de onde está, sem saltos.
+  const k = 1 - Math.exp(-deltaTime * STATE_RESPONSE);
+  const targetConfig = STATE_CONFIG[targetState];
+  currentConfig.sphereColor.lerp(targetConfig.sphereColor, k);
+  currentConfig.sphereIntensity = lerp(currentConfig.sphereIntensity, targetConfig.sphereIntensity, k);
+  currentConfig.ringColor.lerp(targetConfig.ringColor, k);
+  currentConfig.ringOpacity = lerp(currentConfig.ringOpacity, targetConfig.ringOpacity, k);
+  currentConfig.ringSpeed = lerp(currentConfig.ringSpeed, targetConfig.ringSpeed, k);
+  currentConfig.sphereRotationSpeed.x = lerp(currentConfig.sphereRotationSpeed.x, targetConfig.sphereRotationSpeed.x, k);
+  currentConfig.sphereRotationSpeed.y = lerp(currentConfig.sphereRotationSpeed.y, targetConfig.sphereRotationSpeed.y, k);
+  currentConfig.energySpeed = lerp(currentConfig.energySpeed, targetConfig.energySpeed, k);
+  currentConfig.bloomStrength = lerp(currentConfig.bloomStrength, targetConfig.bloomStrength, k);
+  currentConfig.pulseSpeed = lerp(currentConfig.pulseSpeed, targetConfig.pulseSpeed, k);
+
+  // Voz: sobe rápido (ataque) e desce um pouco mais devagar (soltura)
+  const now = performance.now();
+  while (voiceQueue.length && voiceQueue[0][0] <= now) voiceTarget = voiceQueue.shift()[1];
+  const voiceRate = voiceTarget > voiceLevel ? ANIMATION.voiceAttack : ANIMATION.voiceRelease;
+  voiceLevel = lerp(voiceLevel, voiceTarget, 1 - Math.exp(-deltaTime * voiceRate));
   
   // Atualiza uniformes
   sphere.material.uniforms.uTime.value = time;
   sphere.material.uniforms.uCameraPosition.value.copy(camera.position);
   sphere.material.uniforms.uColor.value.copy(currentConfig.sphereColor);
   sphere.material.uniforms.uIntensity.value = currentConfig.sphereIntensity;
-  sphere.material.uniforms.uEnergySpeed.value = currentConfig.energySpeed;
-  sphere.material.uniforms.uPulseSpeed.value = currentConfig.pulseSpeed;
+  // Fases acumuladas (velocidade × delta de cada quadro). Usar tempo × velocidade
+  // fazia a fase saltar quando a velocidade mudava numa transição, e o salto
+  // crescia com o tempo de página aberta (a esfera "tremia" ao trocar de estado).
+  energyPhase += currentConfig.energySpeed * deltaTime;
+  pulsePhase += currentConfig.pulseSpeed * deltaTime;
+  sphere.material.uniforms.uEnergyTime.value = energyPhase;
+  sphere.material.uniforms.uPulseTime.value = pulsePhase;
   
   // Atualiza transição de intensidade global
   if (intensityTarget !== globalIntensity) {
@@ -400,8 +414,12 @@ function animate() {
   // Anel orbital removido
   
   // Pulso da esfera baseado no estado e intensidade global
-  const pulse = Math.sin(time * currentConfig.pulseSpeed) * 0.1 + 0.9;
-  sphere.material.uniforms.uIntensity.value = currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4);
+  const pulse = Math.sin(pulsePhase) * 0.1 + 0.9;
+  sphere.material.uniforms.uIntensity.value =
+    currentConfig.sphereIntensity * globalIntensity * (0.8 + pulse * 0.4);
+
+  // A voz só mexe no anel externo (aro brilhante); o corpo da esfera não reage
+  sphere.material.uniforms.uVoice.value = voiceLevel;
   
   // Renderiza com post-processing
   try {
@@ -418,6 +436,7 @@ animate();
 
 // Exporta funções para uso externo (ex: controle por IA)
 window.setState = setState;
+window.setVoiceLevel = setVoiceLevel;
 window.setIntensity = setIntensity;
 window.setBloomIntensity = setBloomIntensity;
 window.setSphereGlowIntensity = setSphereGlowIntensity;

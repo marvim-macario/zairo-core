@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zairo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/src/zairo.css" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000000; /* Preto puro */
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* Texto de status (opcional) */
+    .status {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #00d9ff;
+      font-size: 1.2rem;
+      font-weight: 300;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      text-shadow: 
+        0 0 10px rgba(0, 217, 255, 0.8),
+        0 0 20px rgba(0, 217, 255, 0.5);
+      opacity: 0.7;
+      pointer-events: none;
+      z-index: 10;
+    }
+  </style>
+  <!-- MediaPipe Face Detection -->
+  <!-- Carrega scripts do MediaPipe usando a versão mais recente disponível -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <script type="module" src="./main.js"></script>
+
+  <div id="zairo-ui">
+    <div id="transcript" aria-live="polite">
+      <p id="user-line"></p>
+      <p id="zairo-line"></p>
+      <p id="tool-line"></p>
+    </div>
+    <form id="input-bar" autocomplete="off">
+      <button type="button" id="mic" title="Falar (segure Espaço)" aria-label="Falar">🎙</button>
+      <input id="text" placeholder="Fale ou digite para o Zairo…" />
+      <button type="button" id="settings-toggle" title="Configurações" aria-label="Configurações">⚙</button>
+    </form>
+    <div id="settings" hidden>
+      <label>Reconhecimento de voz
+        <select id="stt">
+          <option value="whisper">Whisper local (gratuito, roda no navegador)</option>
+          <option value="webspeech">Web Speech do navegador</option>
+        </select>
+      </label>
+      <label>Voz do Zairo
+        <select id="tts">
+          <option value="browser">Voz do sistema (local, gratuita)</option>
+          <option value="piper">Piper (local, servidor)</option>
+          <option value="elevenlabs">ElevenLabs (nuvem)</option>
+        </select>
+      </label>
+      <label>Voz do sistema
+        <select id="browser-voice"></select>
+      </label>
+      <button type="button" id="reset">Nova conversa</button>
+    </div>
+  </div>
+  <script type="module" src="/src/zairo.ts"></script>
+</body>
+</html>

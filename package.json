@@ -1,0 +1,43 @@
+{
+  "name": "zairo",
+  "version": "0.1.0",
+  "description": "Zairo: assistente pessoal estilo Jarvis",
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,magenta \"tsx watch server/index.ts\" \"vite\"",
+    "build": "vite build",
+    "start": "tsx server/index.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marvim-macario/zairo-core.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/marvim-macario/zairo-core/issues"
+  },
+  "homepage": "https://github.com/marvim-macario/zairo-core#readme",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/three": "^0.186.0",
+    "concurrently": "^10.0.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.136.0",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.13",
+    "three": "^0.186.1",
+    "zod": "^4.6.7"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  }
+}
